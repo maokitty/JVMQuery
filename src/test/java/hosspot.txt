@@ -1,0 +1,38 @@
+ public VirtualMachine attachVMByDebugServerName(String debugServerName){
+        VirtualMachineManager vmMgr = Bootstrap.virtualMachineManager();
+        AttachingConnector conn = null;
+        for (AttachingConnector ac:vmMgr.attachingConnectors()){
+            if ("sun.jvm.hotspot.jdi.SADebugServerAttachingConnector".equals(ac.name())){
+                conn=ac;
+                break;
+            }
+        }
+        Map<String,Connector.Argument> paramsMap = conn.defaultArguments();
+        Connector.StringArgument debugServerNameArg = (Connector.StringArgument) paramsMap.get("debugServerName");
+        debugServerNameArg.setValue(debugServerName);
+//        Connector.IntegerArgument portArg = (Connector.IntegerArgument) paramsMap.get("port");
+//        portArg.setValue(8000);
+        try {
+            VirtualMachine vm= conn.attach(paramsMap);
+            LOG.info("QConnection.attachVMByDebugServerName connect to vm name:{} version:{} startum:{}", vm.name(), vm.version(), vm.getDefaultStratum());
+            return vm;
+        } catch (IOException e) {
+            LOG.error("QConnection.attachVMByDebugServerName qConn:{}",this,e);
+        } catch (IllegalConnectorArgumentsException e) {
+            LOG.error("QConnection.attachVMByDebugServerName qConn:{}", this, e);
+        }
+        return null;
+
+    }
+
+
+    private static Logger LOG = LoggerFactory.getLogger(AppQuery.class);
+    static {
+        PropertyConfigurator.configure("./src/test/java/resources/log4j.properties");
+    }
+    public static void main(String[] args) {
+//        Caused by: java.rmi.NotBoundException: Not bound: "SARemoteDebugger" (only bound name is "jmxrmi")
+        QConnection qConn = new QConnection.Param().create();
+        System.out.println((char)64);
+        VirtualMachine vm=qConn.attachVMByDebugServerName("172.18.22.237:8000");
+    }
