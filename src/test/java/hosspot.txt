@@ -34,5 +34,5 @@
 //        Caused by: java.rmi.NotBoundException: Not bound: "SARemoteDebugger" (only bound name is "jmxrmi")
         QConnection qConn = new QConnection.Param().create();
         System.out.println((char)64);
-        VirtualMachine vm=qConn.attachVMByDebugServerName("172.18.22.237:8000");
+        VirtualMachine vm=qConn.attachVMByDebugServerName("localhostgit add :8000");
     }
