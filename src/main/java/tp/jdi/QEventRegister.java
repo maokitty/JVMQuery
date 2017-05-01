@@ -19,27 +19,20 @@ public class QEventRegister {
         this.reqMgr=reqMgr;
     }
 
-    public QEventRegister classPrepareRequest(int suspendPolicy){
-        ClassPrepareRequest cpReq=reqMgr.createClassPrepareRequest();
-        cpReq.setSuspendPolicy(suspendPolicy);
-        cpReq.addSourceNameFilter("App.java");
-        cpReq.enable();
-        return this;
-    }
-
     /**
      * 对类做过滤
+     * 监听了一个类，就不能用排除的
      * @param suspendPolicy
-     * @param q
+     * @param cd
      * @return
      */
-    public QEventRegister methodEntryRequest(int suspendPolicy,Query q){
+    public QEventRegister methodEntryRequest(int suspendPolicy,Coordinate cd){
         MethodEntryRequest meReq=reqMgr.createMethodEntryRequest();
         meReq.setSuspendPolicy(suspendPolicy);
-        if (!"".equals(q.getEntryMethodClass())){
-            meReq.addClassFilter(q.getEntryMethodClass());
-        }else if (q.getEntryExcludeClass()!=null){
-            for (String classPattern : q.getEntryExcludeClass()){
+        if (cd.getEntryClass()!=null && !"".equals(cd.getEntryClass())){
+            meReq.addClassFilter(cd.getEntryClass());
+        }else if (cd.getEntryExcludeClass()!=null){
+            for (String classPattern : cd.getEntryExcludeClass()){
                 meReq.addClassExclusionFilter(classPattern);
             }
         }
@@ -49,28 +42,22 @@ public class QEventRegister {
 
     /**
      * 对类做过滤
+     * 监听了一个类，就不能用排除的
      * @param suspendPolicy
-     * @param q
+     * @param cd
      * @return
      */
-    public QEventRegister methodExitRequest(int suspendPolicy,Query q){
+    public QEventRegister methodExitRequest(int suspendPolicy,Coordinate cd){
         MethodExitRequest meReq=reqMgr.createMethodExitRequest();
         meReq.setSuspendPolicy(suspendPolicy);
-        if (!"".equals(q.getExitMethodClass())){
-            meReq.addClassFilter(q.getEntryMethodClass());
-        }else if (q.getExitExcludeClass()!=null){
-            for (String classPattern : q.getExitExcludeClass()){
+        if (cd.getExitClassName()!=null && !"".equals(cd.getExitClassName())){
+            meReq.addClassFilter(cd.getExitClassName());
+        }else if (cd.getExitExcludeClass()!=null){
+            for (String classPattern : cd.getExitExcludeClass()){
                 meReq.addClassExclusionFilter(classPattern);
             }
         }
         meReq.enable();
-        return this;
-    }
-
-    public QEventRegister classUnloadRequest(int suspendPolicy){
-        ClassUnloadRequest cuReq = reqMgr.createClassUnloadRequest();
-        cuReq.setSuspendPolicy(suspendPolicy);
-        cuReq.enable();
         return this;
     }
 
@@ -98,19 +85,14 @@ public class QEventRegister {
     }
 
     /**
-     *
+     * 考虑一个文件
      * @param rt
-     * @param query
+     * @param cd
      * @param suspendPolicy 必须暂停线程，否则会抛出线程类型不兼容
      */
-    public QEventRegister breakpointRequest(ReferenceType rt,Query query,int suspendPolicy){
+    public QEventRegister breakpointRequest(ReferenceType rt,Coordinate cd,int suspendPolicy){
         try {
-            List<Location> locs=null;
-            if (!"".equals(query.getSourceFileName())){
-                locs=rt.locationsOfLine(STARTUM,query.getSourceFileName(),query.getLineNumber());
-            }else{
-                locs=rt.locationsOfLine(query.getLineNumber());
-            }
+            List<Location> locs=rt.locationsOfLine(STARTUM,cd.getSourceFileName(),cd.getLineNumber());
             if (locs.size()==1)
             {
                 Location bpLocation = locs.get(0);
@@ -126,10 +108,10 @@ public class QEventRegister {
                     req.enable();
                 }
             }else{
-                LOG.info("QEventRegister.breakpointRequest locs:{} query:{}",locs,query);
+                LOG.info("QEventRegister.breakpointRequest locs:{} cd:{}",locs,cd);
             }
         } catch (AbsentInformationException e) {
-            LOG.error("bpEvt query:{}",query,e);
+            LOG.error("bpEvt cd:{}",cd,e);
         }
         return this;
     }

@@ -5,56 +5,65 @@ import com.sun.jdi.event.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Created by liwangchun on 17/4/20.
  */
 public class QEventHandler {
     public static final Logger LOG = LoggerFactory.getLogger(QEventHandler.class);
+    private String LIST_SIGNATURE="Ljava/util/List";
+//    JNITypeparser
+    private Coordinate cd = null;
+    ThreadReference threadRef;
+    public QEventHandler(Coordinate cd){
+        this.cd=cd;
+    }
 
-    public void breakpointRequest(Event evt,Query query){
+    public void breakpointRequest(Event evt){
         BreakpointEvent bpEvt = (BreakpointEvent) evt;
-        ThreadReference threadRef = bpEvt.thread();
-        LOG.info("QEventHandler.breakpointRequest threadRef name:{} type:{} threadRef", bpEvt.thread().name(), bpEvt.thread().type(), threadRef.type().name());
+        threadRef = bpEvt.thread();
         try {
             StackFrame stackFrame = threadRef.frame(0);
-            List<LocalVariable> vars = stackFrame.visibleVariables();
-            for (LocalVariable var : vars) {
-                if (query.getVarNames().contains(var.name())) {
-                    defaultPrintVar(stackFrame.getValue(var), var.name());
+            for (String varName:cd.getVarNames()){
+                LocalVariable var=stackFrame.visibleVariableByName(varName);
+                if (var!=null)
+                {
+                    defaultPrintVar(stackFrame.getValue(var),varName);
+                }else{
+                    LOG.info("QEventHandler.breakpointRequest var:{} not exist",varName);
                 }
             }
         }catch (AbsentInformationException e) {
-            LOG.error("QEventHandler.breakpointRequest  query:{}", query, e);
+            LOG.error("QEventHandler.breakpointRequest  cd:{}", cd, e);
         } catch (IncompatibleThreadStateException e) {
 
-            LOG.error("QEventHandler.breakpointRequest  query:{} cause:{}", query, e.getCause(),e);
+            LOG.error("QEventHandler.breakpointRequest  cd:{} cause:{}", cd, e.getCause(),e);
         }
-    }
-
-    public void classPrepareRequest(Event event){
-        ClassPrepareEvent cpEvt = (ClassPrepareEvent)event;
-        LOG.info("cpEvt rt:{}",cpEvt.referenceType());
-    }
-    public void classUnloadRequest(Event evt){
-        ClassUnloadEvent cuEvt = (ClassUnloadEvent)evt;
-        LOG.info("unlocad class:{}",cuEvt.className());
     }
 
     public void methodEntryRequest(Event evt){
         MethodEntryEvent meEvt = (MethodEntryEvent)evt;
         Method method=meEvt.method();
+        Set<String> methods = cd.getEntryClassMethods();
         try {
-            LOG.info("entry {}.{}({}) ",method.declaringType().name(),method.name(),method.arguments());
+            if (methods == null || (methods!=null && methods.isEmpty()) || (methods!=null && methods.contains(method.name())))
+            {
+                LOG.info("ENTRY {}({})",method,method.arguments());
+            }
         } catch (AbsentInformationException e) {
-            LOG.error("QEventHandler.methodEntryRequest ",e);
+            LOG.info("ENTRY {}",method);
         }
     }
     public void methodExitRequest(Event evt){
         MethodExitEvent meEvt = (MethodExitEvent)evt;
         Method method=meEvt.method();
-        LOG.info("exit {}.{}(return Type name {}) ",method.declaringType().name(),method.name(),method.returnTypeName());
+        Set<String> methods = cd.getExitClassMethods();
+        if (methods == null || (methods!=null && methods.isEmpty()) || (methods!=null && methods.contains(method.name()))){
+            LOG.info("EXIT {}(return Type {}) ", method, method.returnTypeName());
+        }
     }
 
     /**
@@ -62,7 +71,7 @@ public class QEventHandler {
      * @param evt
      */
     public void accessWatchPointRequest(Event evt){
-        //直接拿到的是主线程  threadRef name:main type:class java.lang.Thread (no class loader) threadRef
+        //直接拿到的是主线程
         AccessWatchpointEvent aqEvt = (AccessWatchpointEvent) evt;
         Field f=aqEvt.field();
         defaultPrintVar(aqEvt.valueCurrent(), f.name());
@@ -81,14 +90,13 @@ public class QEventHandler {
 
     private void defaultPrintVar(Value value,String varName){
         if (value instanceof PrimitiveValue){
-            primitiveValue(value,varName);
+            primitiveValue(value, varName);
         }else if (value instanceof ObjectReference){
-            objectReference(value,varName);
+            objectReference(value, varName);
         }else{
             LOG.info("value:{} not exist varName:{}",value,varName);
         }
     }
-
 
     public void objectReference(Value value,String varName){
         if (value instanceof StringReference){
@@ -100,27 +108,77 @@ public class QEventHandler {
             for (Value val:vals) {
                 defaultPrintVar(val, varName);
             }
-        }else if(value instanceof ClassObjectReference){
-            ClassObjectReference coRef = (ClassObjectReference) value;
-            LOG.info("coRef:{}",coRef);
-
         }else if (value instanceof ObjectReference){
             ObjectReference objRef=(ObjectReference)value;
-            //ObjectReference没有提供对应获取的方法,需要有和StringValue一样对应的方法
-            ReferenceType rt = objRef.referenceType();//得到的是对应的变量相关的引用类型，无法得到value
-            LOG.info("objRef:{} rt:{}",objRef,rt);
-        }else if(value instanceof ClassLoaderReference){
-            ClassLoaderReference clRef = (ClassLoaderReference)value;
-            LOG.info("clRef:{}",clRef);
-        }else if(value instanceof  ThreadReference){
-            ThreadReference tRef=(ThreadReference)value;
-            LOG.info("tRef:{}",tRef);
-        }else if(value instanceof ThreadGroupReference){
-            ThreadGroupReference tgRef=(ThreadGroupReference)value;
-            LOG.info("tgRef:{}",tgRef);
+            ReferenceType rt = objRef.referenceType();
+            String gSignature = rt.genericSignature();
+            if (gSignature != null && gSignature.contains(LIST_SIGNATURE)) {
+                try {
+                    //获取list的大小
+                    List<Method> sizeMethods = rt.methodsByName("size");
+                    Method sizeMethod = sizeMethods.get(0);
+                    Value sizeValue=objRef.invokeMethod(threadRef, sizeMethod, new ArrayList<Value>(), ObjectReference.INVOKE_SINGLE_THREADED);
+                    int size=((IntegerValue)sizeValue).value();
+                    List<Method> getMethods = rt.methodsByName("get");
+                    Method getMethod = getMethods.get(0);
+                    VirtualMachine vm=value.virtualMachine();
+                    for (int j=0;j<size;j++)
+                    {
+                        List<IntegerValue> integerParams=new ArrayList<IntegerValue>();
+                        integerParams.add(vm.mirrorOf(j));
+                        Value indexValue = objRef.invokeMethod(threadRef, getMethod, integerParams, ObjectReference.INVOKE_SINGLE_THREADED);
+                        defaultPrintVar(indexValue, indexValue.type().name());
+                    }
+
+                } catch (InvalidTypeException e) {
+                    LOG.info("objectReference e:{}",e);
+                } catch (ClassNotLoadedException e) {
+                    LOG.info("objectReference e:{}", e);
+                } catch (IncompatibleThreadStateException e) {
+                    LOG.info("objectReference e:{}", e);
+                } catch (InvocationException e) {
+                    LOG.info("objectReference e:{}", e);
+                }
+            }else{
+                //获取所有的实例
+//              虚拟机中可能存在多个实例没有被回收
+                List<ObjectReference> ors=rt.instances(0l);
+                ObjectReference or = null;
+                for (ObjectReference objectReference:ors){
+                    if (objectReference.uniqueID() == objRef.uniqueID()){
+                        or = objectReference;
+                    }
+                }
+                if (or == null){
+                    LOG.warn("no object reference:{} find, should not be here",objRef);
+                    return;
+                }
+                List<Field> fields = getFields(rt);
+                for (Field field:fields)
+                {
+                    LOG.info("name:{} value:{}", field.name(), or.getValue(field));
+                }
+            }
         }else{
             LOG.info("value type:{}", value.type().name());
         }
+    }
+
+    private List<Field> getFields (ReferenceType rt){
+        List<Field> fields = new ArrayList<Field>();
+        Set<String> names = cd.getObjFields();
+        if (names==null || names.isEmpty()){
+            return rt.fields();
+        }
+        for (String name:names){
+            Field field=rt.fieldByName(name);
+            if (field!=null){
+                fields.add(field);
+            }else{
+                LOG.info("field:{} not exist",name);
+            }
+        }
+        return fields;
     }
 
     public void primitiveValue(Value value,String varName){

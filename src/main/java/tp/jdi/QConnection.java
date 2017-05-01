@@ -82,12 +82,12 @@ public class QConnection {
         timeoutArg.setValue(this.getTimeout());
         try {
             VirtualMachine vm= conn.attach(paramsMap);
-            LOG.info("QConnection.getAttachSocketConnector connect to vm name:{} version:{} startum:{}", vm.name(), vm.version(), vm.getDefaultStratum());
+            LOG.info("QConnection.attachVMBySocket connect to vm name:{} version:{}", vm.name(), vm.version());
             return vm;
         } catch (IOException e) {
-            LOG.error("QConnection.getAttachSocketConnector qConn:{}",this,e);
+            LOG.error("QConnection.attachVMBySocket qConn:{}",this,e);
         } catch (IllegalConnectorArgumentsException e) {
-            LOG.error("QConnection.getAttachSocketConnector qConn:{}", this, e);
+            LOG.error("QConnection.attachVMBySocket qConn:{}", this, e);
         }
         return null;
 

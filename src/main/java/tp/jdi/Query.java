@@ -1,5 +1,19 @@
 package tp.jdi;
 
+import com.sun.jdi.ReferenceType;
+import com.sun.jdi.VirtualMachine;
+import com.sun.jdi.event.Event;
+import com.sun.jdi.event.EventIterator;
+import com.sun.jdi.event.EventQueue;
+import com.sun.jdi.event.EventSet;
+import com.sun.jdi.request.BreakpointRequest;
+import com.sun.jdi.request.EventRequest;
+import com.sun.jdi.request.MethodEntryRequest;
+import com.sun.jdi.request.MethodExitRequest;
+import com.sun.tools.javac.util.Assert;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Set;
 
@@ -7,177 +21,150 @@ import java.util.Set;
  * Created by liwangchun on 17/4/20.
  */
 public class Query {
-    public Set<String> getVarNames() {
-        return varNames;
-    }
-    private Set<String> varNames;//局部变量
-    private String className;
-    private int lineNumber;
-    private String accessField;//类的属性
-    private String modifyField;//类的方法
-    private String entryMethodClass;
-    private String exitMethodClass;
-    private List<String> entryExcludeClass;
-    private List<String> exitExcludeClass;
+    private static Logger LOG = LoggerFactory.getLogger(Query.class);
+    private QConnection qcon;
+    private  Coordinate cd;
+    private VirtualMachine vm;
 
-    public String getEntryMethodClass() {
-        return entryMethodClass;
+    public Query(QConnection qcon, Coordinate cd) {
+        this.qcon = qcon;
+        this.cd = cd;
+        this.vm = qcon.attachVMBySocket();
+        Assert.checkNonNull(vm);
     }
 
-    public String getExitMethodClass() {
-        return exitMethodClass;
-    }
+   public void lovalVar(){
+       String className = cd.getClassName();
+       Assert.checkNonNull(className, "class name is null");
+       Assert.check(!"".equals(className), "class name is empty");
+       Assert.check(!(cd.getLineNumber() <= 0), "line number less than zero");
+       String sourceFileName = cd.getSourceFileName();
+       Assert.checkNonNull(sourceFileName, "source file name is null");
+       Assert.check(!"".equals(sourceFileName), "source file name is empty");
+       Set<String> varNames = cd.getVarNames();
+       Assert.checkNonNull(varNames,"var name is null");
+       Assert.check(!cd.getVarNames().isEmpty(),"var name is empty");
 
-    public List<String> getEntryExcludeClass() {
-        return entryExcludeClass;
-    }
-
-    public List<String> getExitExcludeClass() {
-        return exitExcludeClass;
-    }
-
-    public String getModifyField() {
-        return modifyField;
-    }
-
-    public String getAccessField() {
-        return accessField;
-    }
-
-    public String getSourceFileName() {
-        return sourceFileName;
-    }
-
-    private String sourceFileName;
-
-    public int getLineNumber() {
-        return lineNumber;
-    }
-
-
-    public String getClassName() {
-        return className;
-    }
-
-    private void setVarNames(Set<String> varNames) {
-        this.varNames = varNames;
-    }
-
-    private void setClassName(String className) {
-        this.className = className;
-    }
-
-    private void setLineNumber(int lineNumber) {
-        this.lineNumber = lineNumber;
-    }
-
-    private void setAccessField(String accessField) {
-        this.accessField = accessField;
-    }
-
-    private void setModifyField(String modifyField) {
-        this.modifyField = modifyField;
-    }
-
-    private void setEntryMethodClass(String entryMethodClass) {
-        this.entryMethodClass = entryMethodClass;
-    }
-
-    private void setExitMethodClass(String exitMethodClass) {
-        this.exitMethodClass = exitMethodClass;
-    }
-
-    private void setEntryExcludeClass(List<String> entryExcludeClass) {
-        this.entryExcludeClass = entryExcludeClass;
-    }
-
-    private void setExitExcludeClass(List<String> exitExcludeClass) {
-        this.exitExcludeClass = exitExcludeClass;
-    }
-
-    private void setSourceFileName(String sourceFileName) {
-        this.sourceFileName = sourceFileName;
-    }
-
-    private Query(){ }
-    public static class Param{
-        private Query query;
-        private Set<String> varNames;//局部变量
-        private String className;
-        private int lineNumber;
-        private String sourceFileName="";
-        private String accessField="";
-        private String modifyField="";
-        private String entryMethodClass;
-        private String exitMethodClass;
-        private List<String> entryExcludeClass;
-        private List<String> exitExcludeClass;
-        public Param(){
-            query = new Query();
-        }
-
-        public Param varName(Set<String> varNames){
-            query.setVarNames(varNames);
-            return this;
-        }
-        public Param className(String className){
-            query.setClassName(className);
-            return this;
-        }
-        public Param lineNumber(int lineNumber){
-            query.setLineNumber(lineNumber);
-            return this;
-        }
-
-        public Param sourceFileName(String sourceFileName){
-            query.setSourceFileName(sourceFileName);
-            return this;
-        }
-
-        public Param modifyField(String modifyField){
-            query.setModifyField(modifyField);
-            return this;
-        }
-
-        public Param accessField(String accessField){
-            query.setAccessField(accessField);
-            return this;
-        }
-        public Param entryMethodClass(String entryMethodClass){
-            query.setEntryMethodClass(entryMethodClass);
-            return this;
-        }
-        public Param exitMethodClass(String exitMethodClass){
-            query.setExitMethodClass(exitMethodClass);
-            return this;
-        }
-        public Param exitExcludeClass(List<String> exitExcludeClass){
-            query.setExitExcludeClass(exitExcludeClass);
-            return this;
-        }
-        public Param entryExcludeClass(List<String> entryExcludeClass){
-            query.setEntryExcludeClass(entryExcludeClass);
-            return this;
-        }
-
-        public Query build(){
-            return query;
+       QEventRegister register = new QEventRegister(vm.eventRequestManager());
+       List<ReferenceType> rts=vm.classesByName(className);
+       ReferenceType rt = rts.get(0);
+       register.breakpointRequest(rt,cd, EventRequest.SUSPEND_EVENT_THREAD);
+       EventQueue queue = vm.eventQueue();
+       QEventHandler handler = new QEventHandler(cd);
+       EventSet evts=null;
+       while (true) {
+           try {
+               evts = queue.remove();
+               EventIterator iterator = evts.eventIterator();
+               while (iterator.hasNext()) {
+                   Event evt = iterator.next();
+                   EventRequest evtReq = evt.request();
+                   if (evtReq instanceof BreakpointRequest) {
+                       handler.breakpointRequest(evt);
+                   }
+               }
+           } catch (InterruptedException e) {
+               LOG.error("Query.lovalVar",e);
+           }finally {
+               if (evts!=null){
+                   evts.resume();
+               }
+           }
+       }
+   }
+    public void methodTrace(){
+        boolean noEntryClass = cd.getClassName()==null || "".equals(cd.getClassName());
+        boolean noEntryExcludeClass = cd.getEntryExcludeClass() == null || cd.getEntryExcludeClass().isEmpty();
+        boolean noExitClass = cd.getExitClassName() == null || "".equals(cd.getExitClassName());
+        boolean noExitExcludeClass = cd.getExitExcludeClass() == null || cd.getExitExcludeClass().isEmpty();
+        Assert.check(!noEntryClass || !noEntryExcludeClass || !noExitClass || !noExitExcludeClass,"no class specify");
+        QEventRegister register = new QEventRegister(vm.eventRequestManager());
+        register.methodEntryRequest(EventRequest.SUSPEND_NONE,cd)
+                .methodExitRequest(EventRequest.SUSPEND_NONE,cd);
+        EventQueue queue = vm.eventQueue();
+        QEventHandler handler = new QEventHandler(cd);
+        while (true) {
+            try {
+                EventSet evts = queue.remove();
+                EventIterator iterator = evts.eventIterator();
+                while (iterator.hasNext()) {
+                    Event evt = iterator.next();
+                    EventRequest evtReq = evt.request();
+                    if (!noEntryClass || !noEntryExcludeClass)
+                    {
+                        if (evtReq instanceof MethodEntryRequest) {
+                            handler.methodEntryRequest(evt);
+                        }
+                    }
+                    if (!noExitClass || !noExitExcludeClass)
+                    {
+                        if (evtReq instanceof MethodExitRequest) {
+                            handler.methodExitRequest(evt);
+                        }
+                    }
+                }
+            } catch (InterruptedException e) {
+                LOG.error("Query.methodTrace",e);
+            }
         }
     }
 
-    @Override
-    public String toString() {
-        return "Query{" +
-                "varNames=" + varNames +
-                ", className='" + className + '\'' +
-                ", lineNumber=" + lineNumber +
-                ", accessField='" + accessField + '\'' +
-                ", modifyField='" + modifyField + '\'' +
-                ", entryMethodClass='" + entryMethodClass + '\'' +
-                ", exitMethodClass='" + exitMethodClass + '\'' +
-                ", entryExcludeClass=" + entryExcludeClass +
-                ", exitExcludeClass=" + exitExcludeClass +
-                ", sourceFileName='" + sourceFileName + '\'' +
-                '}';
+    public void localVarMethodTrace(){
+        boolean noEntryClass = cd.getClassName()==null || "".equals(cd.getClassName());
+        boolean noEntryExcludeClass = cd.getEntryExcludeClass() == null || cd.getEntryExcludeClass().isEmpty();
+        boolean noExitClass = cd.getExitClassName() == null || "".equals(cd.getExitClassName());
+        boolean noExitExcludeClass = cd.getExitExcludeClass() == null || cd.getExitExcludeClass().isEmpty();
+        Assert.check(!noEntryClass || !noEntryExcludeClass || !noExitClass || !noExitExcludeClass,"no class specify");
+        String className = cd.getClassName();
+        Assert.checkNonNull(className, "class name is null");
+        Assert.check(!"".equals(className), "class name is empty");
+        Assert.check(!(cd.getLineNumber() <= 0), "line number less than zero");
+        String sourceFileName = cd.getSourceFileName();
+        Assert.checkNonNull(sourceFileName, "source file name is null");
+        Assert.check(!"".equals(sourceFileName), "source file name is empty");
+        Set<String> varNames = cd.getVarNames();
+        Assert.checkNonNull(varNames,"var name is null");
+        Assert.check(!cd.getVarNames().isEmpty(),"var name is empty");
+
+        QEventRegister register = new QEventRegister(vm.eventRequestManager());
+        List<ReferenceType> rts=vm.classesByName(cd.getClassName());
+        ReferenceType rt = rts.get(0);
+        register.breakpointRequest(rt,cd,EventRequest.SUSPEND_EVENT_THREAD)
+                .methodEntryRequest(EventRequest.SUSPEND_NONE, cd)
+                .methodExitRequest(EventRequest.SUSPEND_NONE,cd);
+        EventQueue queue = vm.eventQueue();
+        QEventHandler handler = new QEventHandler(cd);
+        EventSet evts = null;
+        while (true) {
+            try {
+                evts = queue.remove();
+                EventIterator iterator = evts.eventIterator();
+                while (iterator.hasNext()) {
+                    Event evt = iterator.next();
+                    EventRequest evtReq = evt.request();
+                    if (!noEntryClass || !noEntryExcludeClass)
+                    {
+                        if (evtReq instanceof MethodEntryRequest) {
+                            handler.methodEntryRequest(evt);
+                        }
+                    }
+                    if (!noExitClass || !noExitExcludeClass)
+                    {
+                        if (evtReq instanceof MethodExitRequest) {
+                            handler.methodExitRequest(evt);
+                        }
+                    }
+                    if (evtReq instanceof BreakpointRequest) {
+                        handler.breakpointRequest(evt);
+                    }
+                }
+            } catch (InterruptedException e) {
+                LOG.error("Query.localVarMethodTrace",e);
+            }finally {
+                if (evts!=null){
+                    evts.resume();
+                }
+            }
+        }
     }
 }
