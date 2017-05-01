@@ -1,9 +1,18 @@
 # JVMQuery
 use java debug interface trace method , fields and local variable
 
-JVMQuery can show the primitiveValue for now
+enviroment
+ java1.7(may be java 1.6 , i have not git a trial)
+ 
+example
+ first run https://github.com/wangchunli/JVMQuery/blob/master/src/test/java/tp/jdi/AppTarget.java with options:
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=9999
+ then run https://github.com/wangchunli/JVMQuery/blob/master/src/test/java/tp/jdi/QueryTest.java
 
-you can see the demo under test folder
 
-TODO:
-   hotspot 
+
+ 
+
+
+
+
